@@ -2,128 +2,124 @@ import numpy as np
 import copy
 from collections import deque
 
-
+# Reference solution matrix
 solution = np.array([[1,2,3],[4,5,6],[7,8,0]])
 
-class Puzzle:
-    def __init__(self, grid = None):
-        if (grid is None):
-            self.grid = np.arange(9)
-            np.random.shuffle(self.grid)
-            self.grid = self.grid.reshape((3,3))
-        else:
-            self.grid = copy.copy(grid)
+
+# Randomly generate a puzzle configuration
+def generate_puzzle() -> np.array:
+    puzzle = np.arange(9)
+    np.random.shuffle(puzzle)
+    puzzle = puzzle.reshape((3,3))
+    return puzzle
+
+
+# Return row and column of blank tile in puzzle
+def find_blank_tile(puzzle):
+    location = np.where(puzzle == 0)
+    return location[0][0], location[1][0]
+
+
+# Returns a copy of the puzzle with the blank tile slid in the specified direction
+# Returns None if move is invalid
+def slide_blank_tile(puzzle, dir: str) -> np.array:
+    puzzle = copy.deepcopy(puzzle)
+
+    dir = dir.lower() # in case of typos
+
+    row, col = find_blank_tile(puzzle)
+    row_offset = 0
+    col_offset = 0
+
+    if (dir == 'left' and col > 0):
+        col_offset = -1
+    elif (dir == 'right' and col < 2):
+        col_offset = 1
+    elif (dir == 'up' and row > 0):
+        row_offset = -1
+    elif (dir == 'down' and row < 2):
+        row_offset = 1
+    else:
+        return None
     
-    def find_blank(self):
-        location = np.where(self.grid == 0)
-        return location[0][0], location[1][0]
-    
-    def slide(self, dir: str):
-        dir = dir.lower()
+    dest_row = row + row_offset
+    dest_col = col + col_offset
 
-        row, col = self.find_blank()
-        row_offset = 0
-        col_offset = 0
-
-        if (dir == 'left' and col > 0):
-            col_offset = -1
-        elif (dir == 'right' and col < 2):
-            col_offset = 1
-        elif (dir == 'up' and row > 0):
-            row_offset = -1
-        elif (dir == 'down' and row < 2):
-            row_offset = 1
-        else:
-            return False
-        
-        dest_row = row + row_offset
-        dest_col = col + col_offset
-
-        self.grid[row][col] = self.grid[dest_row][dest_col]
-        self.grid[dest_row][dest_col] = 0
-        return True
-
-    def __str__(self):
-        return str(self.grid)
+    puzzle[row][col] = puzzle[dest_row][dest_col] # replace blank with the destination tile
+    puzzle[dest_row][dest_col] = 0 # replace destination tile with the blank
+    return puzzle
 
 
 
+# Storage class used to navigate the breadth-first search tree
 class Node:
-    def __init__(self, parent, puzzle: Puzzle, move: str = None):
-        self.parent = parent
+    def __init__(self, parent_index, puzzle: np.array, move: str = None):
+        self.parent_index = parent_index
         self.puzzle = puzzle
-        self.children = []
         self.move = move
-    
-    def add_child(self, dir: str):
-        new_puzzle = Puzzle(self.puzzle.grid)
-
-        if(new_puzzle.slide(dir)): # if successful move
-            child = Node(self, new_puzzle, dir)
-            self.children.append(child)
-            return child
-        else:
-            return None
-        
-    def remove_last_child(self):
-        del self.children[-1]
 
     def __str__(self):
         return str(self.puzzle)
     
 
 
-
+# Function that solves a puzzle
 def solvePuzzle(initial):
     directions = ['left', 'up', 'right', 'down']
 
-    nodes_visited = deque()
-    nodes_to_visit = deque()
+    node_list = []
+    itr = 0
 
     root_node = Node(None, initial)
-    nodes_to_visit.append(root_node)
+    node_list.append(root_node)
 
     solved = False
     
-    while (not solved and len(nodes_to_visit) > 0):
-        current_node = nodes_to_visit[0]
+    # Iterate through the node list until puzzle is solved or the list is exhausted
+    while (not solved and itr < len(node_list)):
+        current_node = node_list[itr]
 
+        # Explore the puzzle states from pushing the blank tile in each direction
         for dir in directions:
-            child_removed = False
-            child = current_node.add_child(dir)
+            duplicate_node = False
+            new_puzzle = slide_blank_tile(current_node.puzzle, dir)
+            # print(f'Checking:\n{new_puzzle}')
 
-            if not child is None:
-                for node in nodes_visited:
-                    if np.array_equal(node.puzzle.grid, child.puzzle.grid):
-                        current_node.remove_last_child()
-                        child_removed = True
-                        break
-                
-                if not child_removed:
-                    for node in nodes_to_visit:
-                        if np.array_equal(node.puzzle.grid, child.puzzle.grid):
-                            current_node.remove_last_child()
-                            child_removed = True
-                            break
+            # If invalid move, skip this attempt
+            if new_puzzle is None:
+                # print("Invalid. Moving on...")
+                continue
 
-                if not child_removed:
-                    nodes_to_visit.append(child)
-                    if np.array_equal(solution, child.puzzle.grid):
-                        solved = True
-                        break
+            # Search for duplicate nodes
+            for i in range(0,len(node_list)):
+                if np.array_equal(node_list[i].puzzle, new_puzzle) and i != itr:
+                    duplicate_node = True
+                    # print(f'Duplicate found:\n{node_list[i].puzzle}')
+                    break
             
-        nodes_visited.append(nodes_to_visit.popleft())
-        print(f'{len(nodes_visited)} nodes visited, {len(nodes_to_visit)} nodes left')
+            # If no duplicates, add to list and check for game solve
+            if not duplicate_node:
+                node_list.append(Node(itr,new_puzzle,dir))
+                # print(f'No duplicates found. Added.')
+
+                if np.array_equal(solution, new_puzzle):
+                    solved = True
+                    break
+            
+        itr += 1
+        print(f'{itr} nodes visited, {len(node_list) - itr} nodes left')
+
     
     if solved:
         move_sequence = []
 
-        move = child.move
-        parent_node = child
+        end_node = node_list[-1]
+        move = end_node.move
+        parent_node = end_node # Initialize the parent node
         
-        while (not move is None):
+        while (not move is None): # Run until initial game state is reached
             move_sequence.append(move)
-            parent_node = parent_node.parent
+            parent_node = node_list[parent_node.parent_index] # Get the current node's parent
             move = parent_node.move
 
         move_sequence.reverse()
@@ -133,14 +129,18 @@ def solvePuzzle(initial):
 
 
 
-
-
-myPuzzle = Puzzle(np.array([[3,4,1],[6,0,2],[7,8,5]]))
-
-myPuzzle = Puzzle(copy.copy(solution))
+# Reverse solution
+myPuzzle = copy.copy(solution)
 sequence = ['left', 'left', 'up', 'right', 'right', 'up', 'left', 'left', 'down', 'right', 'up', 'right', 'down']
 for move in sequence:
-    myPuzzle.slide(move)
+    myPuzzle = slide_blank_tile(myPuzzle, move)
+
+
+# Simple puzzle
+# myPuzzle = np.array([[0,3,6],[1,7,2],[5,4,8]])
+
+# Purely random, takes very long time to solve
+# myPuzzle = np.array([[3,4,1],[6,0,2],[7,8,5]])
 
 print(myPuzzle)
 solvePuzzle(myPuzzle)
